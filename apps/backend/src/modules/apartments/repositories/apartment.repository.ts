@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaService } from '../../../database/prisma.service';
 import { CreateApartmentDto, CreateBuildingDto, CreateUnitDto } from '../dto/apartment.dto';
 
 @Injectable()
 export class ApartmentRepository {
-  private prisma = new PrismaClient();
+  constructor(private prisma: PrismaService) {}
 
   async createApartment(data: CreateApartmentDto) {
     return this.prisma.apartment.create({ data });
@@ -22,13 +22,6 @@ export class ApartmentRepository {
     return this.prisma.apartment.findUnique({
       where: { id },
       include: { buildings: { include: { units: true } } },
-    });
-  }
-
-  async findBuildingsByApartment(apartmentId: string) {
-    return this.prisma.building.findMany({
-      where: { apartmentId },
-      include: { units: true },
     });
   }
 }

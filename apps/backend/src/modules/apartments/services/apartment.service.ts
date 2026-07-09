@@ -8,15 +8,14 @@ export class ApartmentService {
   constructor(private readonly repository: ApartmentRepository) {}
 
   async createApartment(user: any, dto: CreateApartmentDto) {
-    if (user.role !== UserRole.SUPER_ADMIN) {
+    if (user.role.name !== UserRole.SUPER_ADMIN) {
       throw new ForbiddenException('Only Super Admins can create new apartment complexes');
     }
     return this.repository.createApartment(dto);
   }
 
   async createBuilding(user: any, dto: CreateBuildingDto) {
-    // Logic to check if user is the manager of this apartment
-    // In a real scenario, we would query the PropertyManagerApartment table
+    // In production, verify ownership here
     return this.repository.createBuilding(dto);
   }
 
