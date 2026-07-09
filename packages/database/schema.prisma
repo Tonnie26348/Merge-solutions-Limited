@@ -1,0 +1,825 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// AUTHENTICATION & ROLE-BASED ACCESS CONTROL
+// ==========================================
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+model User {
+  id               String       @id @default(uuid()) @db.Uuid
+  email            String       @unique
+  phoneNumber      String?      @unique
+  passwordHash     String?      // Optional for SSO (Clerk / Better Auth)
+  firstName        String
+  lastName         String
+  status           UserStatus   @default(PENDING)
+  roleId           String       @db.Uuid
+  role             Role         @relation(fields: [roleId], references: [id])
+  isVerified       Boolean      @default(false)
+  avatarUrl        String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  deletedAt        DateTime?
+
+  // Profile Relations (One-to-One / One-to-Many dynamic extensions)
+  residents        Resident[]
+  propertyManagers PropertyManager[]
+  landlords        Landlord[]
+  technicians      Technician[]
+
+  // Core Module Relations
+  chatParticipants ChatParticipant[]
+  messages         Message[]
+  notifications    Notification[]
+  reviewsAuthored  Review[]
+  vacancies        Vacancy[]
+  applications     VacancyApplication[]
+  aiConversations  AIConversation[]
+  auditLogs        AuditLog[]
+  activityLogs     ActivityLog[]
+  uploadedFiles    FileRecord[]
+
+  @@index([email])
+  @@index([phoneNumber])
+  @@index([status])
+  @@index([roleId])
+}
+
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String           @unique // SUPER_ADMIN, APARTMENT_ADMIN, RESIDENT, TECHNICIAN, LANDLORD
+  description String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  users       User[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String           @unique // e.g., "maintenance:create", "payment:initiate"
+  description String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+// ==========================================
+// APARTMENT & REAL ESTATE STRUCTURES
+// ==========================================
+
+enum OccupancyStatus {
+  VACANT
+  OCCUPIED
+  MAINTENANCE
+}
+
+model Apartment {
+  id          String     @id @default(uuid()) @db.Uuid
+  name        String
+  address     String
+  city        String
+  country     String     @default("Kenya")
+  latitude    Float?
+  longitude   Float?
+  logoUrl     String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+  
+  // Relations
+  buildings   Building[]
+  residents   Resident[]
+  managers    PropertyManagerApartment[]
+  landlords   LandlordApartment[]
+
+  @@index([city])
+}
+
+model Building {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String    // e.g., "Block A", "Phase 2"
+  apartmentId String    @db.Uuid
+  apartment   Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  units       Unit[]
+
+  @@index([apartmentId])
+}
+
+model Unit {
+  id                  String               @id @default(uuid()) @db.Uuid
+  number              String               // e.g., "B12", "A10"
+  floor               Int
+  status              OccupancyStatus      @default(VACANT)
+  rentAmount          Decimal              @db.Decimal(12, 2)
+  buildingId          String               @db.Uuid
+  building            Building             @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?
+  
+  // Relations
+  residents           Resident[]
+  maintenanceRequests MaintenanceRequest[]
+  vacancies           Vacancy[]
+
+  @@index([buildingId])
+  @@index([status])
+}
+
+// ==========================================
+// ROLE PROFILE MODULE EXTENSIONS
+// ==========================================
+
+model Resident {
+  id                  String               @id @default(uuid()) @db.Uuid
+  userId              String               @db.Uuid
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apartmentId         String               @db.Uuid
+  apartment           Apartment            @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+  unitId              String?              @db.Uuid
+  unit                Unit?                @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  leaseStart          DateTime?
+  leaseEnd            DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?
+
+  maintenanceRequests MaintenanceRequest[]
+  wallets             Wallet[]
+
+  @@unique([userId, apartmentId])
+  @@index([userId])
+  @@index([apartmentId])
+  @@index([unitId])
+}
+
+model PropertyManager {
+  id         String                     @id @default(uuid()) @db.Uuid
+  userId     String                     @db.Uuid
+  user       User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime                   @default(now())
+  updatedAt  DateTime                   @updatedAt
+  deletedAt  DateTime?
+  apartments PropertyManagerApartment[]
+
+  @@index([userId])
+}
+
+model PropertyManagerApartment {
+  managerId   String          @db.Uuid
+  apartmentId String          @db.Uuid
+  manager     PropertyManager @relation(fields: [managerId], references: [id], onDelete: Cascade)
+  apartment   Apartment       @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+
+  @@id([managerId, apartmentId])
+  @@index([managerId])
+  @@index([apartmentId])
+}
+
+model Landlord {
+  id         String              @id @default(uuid()) @db.Uuid
+  userId     String              @db.Uuid
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  deletedAt  DateTime?
+  apartments LandlordApartment[]
+
+  @@index([userId])
+}
+
+model LandlordApartment {
+  landlordId  String    @db.Uuid
+  apartmentId String    @db.Uuid
+  landlord    Landlord  @relation(fields: [landlordId], references: [id], onDelete: Cascade)
+  apartment   Apartment @relation(fields: [apartmentId], references: [id], onDelete: Cascade)
+
+  @@id([landlordId, apartmentId])
+  @@index([landlordId])
+  @@index([apartmentId])
+}
+
+// ==========================================
+// MAINTENANCE & TECHNICIAN MARKETPLACE
+// ==========================================
+
+enum TechStatus {
+  PENDING_VERIFICATION
+  VERIFIED
+  SUSPENDED
+  REJECTED
+}
+
+enum RequestUrgency {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RequestStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum BookingStatus {
+  PROPOSED
+  ACCEPTED
+  DECLINED
+  IN_ROUTE
+  WORK_STARTED
+  COMPLETED
+  CANCELLED
+}
+
+enum CollaborationStatus {
+  PROPOSED
+  ACTIVE
+  SETTLED
+  CANCELLED
+}
+
+model Technician {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  userId             String                 @db.Uuid
+  user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio                String?
+  experienceYears    Int
+  verificationStatus TechStatus             @default(PENDING_VERIFICATION)
+  idNumber           String?                @unique
+  certifications     String[]               // Array of verification attachment keys
+  averageRating      Float                  @default(0.0)
+  isAvailable        Boolean                @default(true)
+  latitude           Float?
+  longitude          Float?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  deletedAt          DateTime?
+  
+  // Relations
+  categories         TechnicianCategory[]
+  bookings           Booking[]
+  collabMemberships  CollaborationMember[]
+  wallets            Wallet[]
+  reviewsReceived    Review[]
+
+  @@index([userId])
+  @@index([verificationStatus])
+  @@index([isAvailable])
+}
+
+model Category {
+  id                  String               @id @default(uuid()) @db.Uuid
+  name                String               @unique // Plumbing, Electrical, HVAC, etc.
+  slug                String               @unique
+  description         String?
+  parentId            String?              @db.Uuid
+  parent              Category?            @relation("SubCategories", fields: [parentId], references: [id])
+  subCategories       Category[]           @relation("SubCategories")
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?
+  
+  technicians         TechnicianCategory[]
+  maintenanceRequests MaintenanceRequest[]
+
+  @@index([parentId])
+}
+
+model TechnicianCategory {
+  technicianId String     @db.Uuid
+  categoryId   String     @db.Uuid
+  technician   Technician @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  category     Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([technicianId, categoryId])
+  @@index([technicianId])
+  @@index([categoryId])
+}
+
+model MaintenanceRequest {
+  id             String             @id @default(uuid()) @db.Uuid
+  title          String
+  description    String
+  urgency        RequestUrgency     @default(MEDIUM)
+  status         RequestStatus      @default(OPEN)
+  residentId     String             @db.Uuid
+  resident       Resident           @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  unitId         String             @db.Uuid
+  unit           Unit               @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  categoryId     String             @db.Uuid
+  category       Category           @relation(fields: [categoryId], references: [id])
+  mediaKeys      String[]           // Array of Supabase Storage S3 keys for work photos
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  deletedAt      DateTime?
+  
+  // Relations
+  bookings       Booking[]
+  aiConversation AIConversation?
+
+  @@index([residentId])
+  @@index([unitId])
+  @@index([categoryId])
+  @@index([status])
+}
+
+model Booking {
+  id                  String               @id @default(uuid()) @db.Uuid
+  requestId           String               @db.Uuid
+  maintenanceRequest  MaintenanceRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  technicianId        String               @db.Uuid
+  technician          Technician           @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  scheduledAt         DateTime
+  status              BookingStatus        @default(PROPOSED)
+  totalAmount         Decimal              @db.Decimal(12, 2) @default(0.0)
+  invoiceUrl          String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?
+  
+  // Relations
+  collaboration       Collaboration?
+  transactions        Transaction[]
+  reviews             Review[]
+  revenueShare        RevenueShare?
+  chats               Chat[]
+
+  @@index([requestId])
+  @@index([technicianId])
+  @@index([status])
+}
+
+// Peer-to-Peer Technician Collaboration System
+model Collaboration {
+  id           String              @id @default(uuid()) @db.Uuid
+  bookingId    String              @unique @db.Uuid
+  booking      Booking             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  status       CollaborationStatus @default(PROPOSED)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  members      CollaborationMember[]
+}
+
+model CollaborationMember {
+  id              String        @id @default(uuid()) @db.Uuid
+  collaborationId String        @db.Uuid
+  collaboration   Collaboration @relation(fields: [collaborationId], references: [id], onDelete: Cascade)
+  technicianId    String        @db.Uuid
+  technician      Technician    @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  roleDescription String?       // e.g., "Assisted with backup circuit wiring"
+  splitPercentage Decimal       @db.Decimal(5, 2) // e.g., 30.00%
+  amountEarned    Decimal       @db.Decimal(12, 2) @default(0.0)
+  isCreator       Boolean       @default(false)
+  isAccepted      Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([collaborationId, technicianId])
+  @@index([collaborationId])
+  @@index([technicianId])
+}
+
+// ==========================================
+// LEDGERS, WALLETS, & PAYMENTS SYSTEM
+// ==========================================
+
+enum WalletType {
+  RESIDENT
+  TECHNICIAN
+  LANDLORD
+  BUILDING_MAINTENANCE  // Pooled apartment funds
+  PLATFORM_COMMISSION   // Revenue pocket of MERGE
+}
+
+enum WalletStatus {
+  ACTIVE
+  FROZEN
+  SUSPENDED
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  RENT_PAYMENT
+  SERVICE_CHARGE
+  MAINTENANCE_ESCROW
+  ESCROW_RELEASE
+  COMMISSION_FEE
+  COLLABORATION_SPLIT
+  REFUND
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESSFUL
+  FAILED
+  REVERSED
+}
+
+enum PaymentGateway {
+  MPESA_DARAJA
+  STRIPE
+  WALLET
+}
+
+model Wallet {
+  id                  String             @id @default(uuid()) @db.Uuid
+  walletType          WalletType
+  status              WalletStatus       @default(ACTIVE)
+  balance             Decimal            @db.Decimal(12, 2) @default(0.0)
+  currency            String             @default("KES")
+  
+  // Dynamic Polymorphic Owners
+  userId              String?            @db.Uuid // If linked to a general user/landlord
+  residentId          String?            @db.Uuid // If linked to a Resident profile
+  technicianId        String?            @db.Uuid // If linked to a Technician profile
+  apartmentId         String?            @db.Uuid // If pooled maintenance wallet
+  
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  deletedAt           DateTime?
+
+  resident            Resident?          @relation(fields: [residentId], references: [id], onDelete: SetNull)
+  technician          Technician?        @relation(fields: [technicianId], references: [id], onDelete: SetNull)
+
+  // Ledger Transactions
+  sentTransactions     Transaction[]     @relation("SenderWallet")
+  receivedTransactions Transaction[]     @relation("RecipientWallet")
+
+  @@index([walletType])
+  @@index([residentId])
+  @@index([technicianId])
+  @@index([apartmentId])
+}
+
+model Transaction {
+  id                 String            @id @default(uuid()) @db.Uuid
+  reference          String            @unique // Unique MERGE internal ledger transaction ID
+  amount             Decimal           @db.Decimal(12, 2)
+  type               TransactionType
+  status             TransactionStatus @default(PENDING)
+  
+  senderWalletId     String?           @db.Uuid
+  senderWallet       Wallet?           @relation("SenderWallet", fields: [senderWalletId], references: [id], onDelete: SetNull)
+  
+  recipientWalletId  String?           @db.Uuid
+  recipientWallet    Wallet?           @relation("RecipientWallet", fields: [recipientWalletId], references: [id], onDelete: SetNull)
+  
+  bookingId          String?           @db.Uuid
+  booking            Booking?          @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  
+  gateway            PaymentGateway
+  gatewayReference   String?           // M-Pesa Receipt Number or Stripe Payment Intent ID
+  description        String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([senderWalletId])
+  @@index([recipientWalletId])
+  @@index([bookingId])
+  @@index([type])
+  @@index([status])
+  @@index([reference])
+}
+
+model RevenueShare {
+  id               String   @id @default(uuid()) @db.Uuid
+  bookingId        String   @unique @db.Uuid
+  booking          Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  totalAmount      Decimal  @db.Decimal(12, 2)
+  platformFee      Decimal  @db.Decimal(12, 2) // MERGE 10%
+  leadTechShare    Decimal  @db.Decimal(12, 2)
+  collabTechsShare Decimal  @db.Decimal(12, 2) @default(0.0)
+  isSettled        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ==========================================
+// VACANCY MARKETPLACE & RENTAL APPLICATIONS
+// ==========================================
+
+enum VacancyStatus {
+  DRAFT
+  PUBLISHED
+  UNDER_CONTRACT
+  ARCHIVED
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  REVIEWING
+  APPROVED
+  DECLINED
+}
+
+model Vacancy {
+  id             String               @id @default(uuid()) @db.Uuid
+  title          String
+  description    String
+  rentAmount     Decimal              @db.Decimal(12, 2)
+  depositAmount  Decimal              @db.Decimal(12, 2)
+  bedrooms       Int
+  bathrooms      Int
+  status         VacancyStatus        @default(DRAFT)
+  
+  landlordId     String               @db.Uuid
+  landlord       User                 @relation(fields: [landlordId], references: [id], onDelete: Cascade)
+  
+  unitId         String?              @db.Uuid
+  unit           Unit?                @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  
+  mediaKeys      String[]             // Array of vacancy gallery image keys
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  deletedAt      DateTime?
+
+  applications   VacancyApplication[]
+
+  @@index([landlordId])
+  @@index([unitId])
+  @@index([status])
+}
+
+model VacancyApplication {
+  id                 String            @id @default(uuid()) @db.Uuid
+  vacancyId          String            @db.Uuid
+  vacancy            Vacancy           @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  applicantId        String            @db.Uuid
+  applicant          User              @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  status             ApplicationStatus @default(SUBMITTED)
+  
+  creditReportUrl    String?
+  rentHistoryUrl     String?
+  monthlyIncome      Decimal           @db.Decimal(12, 2)
+  employerName       String?
+  applicantNotes     String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([vacancyId])
+  @@index([applicantId])
+  @@index([status])
+}
+
+// ==========================================
+// REALTIME MESSAGING, NOTIFICATIONS & CHAT
+// ==========================================
+
+enum ChatType {
+  DIRECT
+  JOB_GROUP
+  COMMUNITY_BOARD
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  DOCUMENT
+  LOCATION
+}
+
+model Chat {
+  id           String            @id @default(uuid()) @db.Uuid
+  bookingId    String?           @db.Uuid
+  booking      Booking?          @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  type         ChatType          @default(DIRECT)
+  title        String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  participants ChatParticipant[]
+  messages     Message[]
+
+  @@index([bookingId])
+}
+
+model ChatParticipant {
+  id       String   @id @default(uuid()) @db.Uuid
+  chatId   String   @db.Uuid
+  chat     Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  userId   String   @db.Uuid
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
+
+  @@unique([chatId, userId])
+  @@index([chatId])
+  @@index([userId])
+}
+
+model Message {
+  id          String      @id @default(uuid()) @db.Uuid
+  chatId      String      @db.Uuid
+  chat        Chat        @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  senderId    String      @db.Uuid
+  sender      User        @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  type        MessageType @default(TEXT)
+  content     String
+  mediaKey    String?     // Supabase storage bucket file key
+  isRead      Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+
+  @@index([chatId])
+  @@index([senderId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  type      String   // SYSTEM, CHAT, BOOKING, PAYMENT, VACANCY
+  isRead    Boolean  @default(false)
+  payload   Json?    // Contextual payload
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// ==========================================
+// REVIEWS, RATINGS & AUDITING MODULE
+// ==========================================
+
+model Review {
+  id                   String     @id @default(uuid()) @db.Uuid
+  bookingId            String     @db.Uuid
+  booking              Booking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  authorId             String     @db.Uuid
+  author               User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  targetTechnicianId   String     @db.Uuid
+  targetTechnician     Technician @relation(fields: [targetTechnicianId], references: [id], onDelete: Cascade)
+  rating               Int        // Combined score (1-5)
+  qualityRating        Int
+  speedRating          Int
+  professionalismRating Int
+  comment              String?
+  createdAt            DateTime   @default(now())
+
+  @@index([bookingId])
+  @@index([targetTechnicianId])
+}
+
+model AuditLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String?  @db.Uuid
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action        String   // e.g., "USER_SUSPENDED", "WALLETS_MUTATED"
+  entityName    String   // e.g., "User", "Wallet"
+  entityId      String?  @db.Uuid
+  previousState Json?
+  newState      Json?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model ActivityLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activityType String   // e.g., "USER_LOGIN", "PAGE_VIEW"
+  description  String
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ==========================================
+// KNOWLEDGE BASES, RAG, & AI SYSTEMS
+// ==========================================
+
+enum AIRole {
+  SYSTEM
+  USER
+  ASSISTANT
+}
+
+model AIConversation {
+  id          String               @id @default(uuid()) @db.Uuid
+  userId      String               @db.Uuid
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestId   String?              @unique @db.Uuid // Linked if troubleshooting a specific maintenance ticket
+  request     MaintenanceRequest?  @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  messages    AIMessage[]
+
+  @@index([userId])
+}
+
+model AIMessage {
+  id             String         @id @default(uuid()) @db.Uuid
+  conversationId String         @db.Uuid
+  conversation   AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           AIRole
+  content        String
+  metadata       Json?          // Stores references to suggested tools, pricing, or technicians
+  createdAt      DateTime       @default(now())
+
+  @@index([conversationId])
+  @@index([createdAt])
+}
+
+// ==========================================
+// SYSTEM SUBSCRIPTIONS, UTILITIES & SETTINGS
+// ==========================================
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  UNPAID
+}
+
+enum SubscriberType {
+  APARTMENT
+  TECHNICIAN
+}
+
+model Subscription {
+  id             String             @id @default(uuid()) @db.Uuid
+  subscriberType SubscriberType
+  subscriberId   String             @db.Uuid // UUID of either Apartment or Technician
+  planName       String             // BASIC, PREMIUM, ENTERPRISE
+  status         SubscriptionStatus @default(ACTIVE)
+  price          Decimal            @db.Decimal(12, 2)
+  currency       String             @default("KES")
+  billingPeriod  String             // MONTHLY, YEARLY
+  startsAt       DateTime           @default(now())
+  endsAt         DateTime
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([subscriberId])
+  @@index([subscriberType])
+  @@index([status])
+}
+
+model FileRecord {
+  id           String   @id @default(uuid()) @db.Uuid
+  key          String   @unique // S3 Key inside Supabase Storage Bucket
+  bucket       String   // e.g., "verification-docs", "job-media", "profile-avatars"
+  originalName String
+  mimeType     String
+  size         Int      // Bytes
+  uploadedById String   @db.Uuid
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@index([uploadedById])
+  @@index([key])
+}
+
+model Setting {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique // SYSTEM_COMMISSION_PERCENTAGE, MPESA_TIMEOUT_LIMIT, etc.
+  value       String
+  group       String   @default("GENERAL") // SYSTEM, SMS, EMAIL, PAYMENT
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([key])
+}
