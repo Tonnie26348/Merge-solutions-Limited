@@ -12,6 +12,7 @@ import { PaymentModule } from './modules/payments/payment.module';
 import { VacancyModule } from './modules/vacancies/vacancy.module';
 import { ReviewModule } from './modules/reviews/review.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { AiModule } from './modules/ai/ai.module';
 
 @Module({
   imports: [
@@ -27,7 +28,8 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     PaymentModule,
     VacancyModule,
     ReviewModule,
-    AnalyticsModule
+    AnalyticsModule,
+    AiModule
   ],
   controllers: [],
   providers: [],
