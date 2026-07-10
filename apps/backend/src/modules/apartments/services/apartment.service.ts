@@ -15,7 +15,11 @@ export class ApartmentService {
   }
 
   async createBuilding(user: any, dto: CreateBuildingDto) {
-    // In production, verify ownership here
+    // SECURITY FIX: Implement ownership check here
+    const apartment = await this.repository.findApartmentById(dto.apartmentId);
+    if (!apartment || apartment.ownerId !== user.id) {
+        throw new ForbiddenException('You do not own this apartment');
+    }
     return this.repository.createBuilding(dto);
   }
 
@@ -23,9 +27,17 @@ export class ApartmentService {
     return this.repository.createUnit(dto);
   }
 
-  async getApartmentDetails(id: string) {
+  async getApartmentDetails(user: any, id: string) {
     const apartment = await this.repository.findApartmentById(id);
     if (!apartment) throw new NotFoundException('Apartment complex not found');
+    
+    // SECURITY FIX: BOLA Mitigation
+    // Only Admin of this apartment or SuperAdmin can view details
+    const isAdmin = apartment.admins.some(admin => admin.userId === user.id);
+    if (user.role.name !== UserRole.SUPER_ADMIN && !isAdmin) {
+        throw new ForbiddenException('Access denied to this apartment');
+    }
+    
     return apartment;
   }
 }
