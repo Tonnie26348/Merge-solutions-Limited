@@ -4,6 +4,7 @@ import { AnalyticsService } from './services/analytics.service';
 import { AnalyticsRepository } from './repositories/analytics.repository';
 import { TechnicianPerformanceService } from './services/technician-performance.service';
 import { SubscriptionAnalyticsService } from './services/subscription-analytics.service';
+import { ForecastingService } from './services/forecasting.service';
 import { PrismaModule } from '../../database/prisma.module';
 
 @Module({
@@ -13,8 +14,14 @@ import { PrismaModule } from '../../database/prisma.module';
     AnalyticsService, 
     AnalyticsRepository, 
     TechnicianPerformanceService,
-    SubscriptionAnalyticsService
+    SubscriptionAnalyticsService,
+    ForecastingService
   ],
-  exports: [AnalyticsService, TechnicianPerformanceService, SubscriptionAnalyticsService],
+  exports: [
+    AnalyticsService, 
+    TechnicianPerformanceService, 
+    SubscriptionAnalyticsService,
+    ForecastingService
+  ],
 })
 export class AnalyticsModule {}
