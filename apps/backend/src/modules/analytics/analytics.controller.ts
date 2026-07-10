@@ -1,6 +1,7 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
 import { AnalyticsService } from './services/analytics.service';
 import { TechnicianPerformanceService } from './services/technician-performance.service';
+import { SubscriptionAnalyticsService } from './services/subscription-analytics.service';
 import { AuthGuard } from '../auth/guards/auth.guard';
 
 @Controller('analytics')
@@ -9,6 +10,7 @@ export class AnalyticsController {
   constructor(
     private readonly analyticsService: AnalyticsService,
     private readonly techPerformanceService: TechnicianPerformanceService,
+    private readonly subAnalyticsService: SubscriptionAnalyticsService,
   ) {}
 
   @Get('stats')
@@ -24,5 +26,15 @@ export class AnalyticsController {
   @Get('technicians/:id/performance')
   async getTechnicianPerformance(@Param('id') id: string) {
     return this.techPerformanceService.getPerformance(id);
+  }
+
+  @Get('subscriptions/mrr')
+  async getMrr() {
+    return this.subAnalyticsService.getMrr();
+  }
+
+  @Get('subscriptions/churn')
+  async getChurn() {
+    return this.subAnalyticsService.getChurnRate();
   }
 }
