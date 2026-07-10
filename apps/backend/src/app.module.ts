@@ -1,10 +1,8 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { validateEnv } from './config/env.validation';
-
-// ... other imports
 
 @Module({
   imports: [
@@ -12,13 +10,15 @@ import { validateEnv } from './config/env.validation';
       validate: validateEnv,
       isGlobal: true,
     }),
-    ThrottlerModule.forRoot([{
-      ttl: 60000,
-      limit: 10,
-    }]),
-    // ... modules
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [{
+        ttl: parseInt(config.get('THROTTLE_TTL') || '60000'),
+        limit: parseInt(config.get('THROTTLE_LIMIT') || '10'),
+      }],
+    }),
   ],
-  controllers: [],
   providers: [
     {
       provide: APP_GUARD,

@@ -3,20 +3,24 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import * as Sentry from '@sentry/node';
 import helmet from 'helmet';
+import { json } from 'express';
 
 async function bootstrap() {
-  // Initialize Sentry
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
-    integrations: [
-      Sentry.httpIntegration(),
-    ],
   });
 
   const app = await NestFactory.create(AppModule);
   
-  // Security Headers
+  // Security Hardening
   app.use(helmet());
+  app.use(json({ limit: '10mb' })); // Limit payload size to prevent DoS
+  
+  app.enableCors({
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3001'],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+  });
   
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
@@ -25,7 +29,6 @@ async function bootstrap() {
   }));
 
   await app.listen(3000);
-  console.log('MERGE Backend is running on: http://localhost:3000');
 }
 
 bootstrap();
