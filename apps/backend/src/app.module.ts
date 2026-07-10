@@ -14,6 +14,7 @@ import { ReviewModule } from './modules/reviews/review.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { ReportsModule } from './modules/reports/reports.module';
 
 @Module({
   imports: [
@@ -31,7 +32,8 @@ import { AuditModule } from './modules/audit/audit.module';
     ReviewModule,
     AnalyticsModule,
     AiModule,
-    AuditModule
+    AuditModule,
+    ReportsModule
   ],
   controllers: [],
   providers: [],
